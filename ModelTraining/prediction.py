@@ -10,23 +10,29 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
     classification_report,
-    confusion_matrix,
-    ConfusionMatrixDisplay
+    confusion_matrix
 )
 
 # -------------------------
 # CONFIG
 # -------------------------
 IMG_SIZE = 150
-THRESHOLD = 0.6   # You can adjust after threshold testing
+THRESHOLD = 0.6   # Adjust if needed
 
-model = load_model("models/gif_video_bullying_model.h5")
+MODEL_PATH = "models/gif_video_bullying_model.h5"
+TEST_DIR = "test_inputs"
+NEW_INPUT_DIR = "inputs"
+
+# -------------------------
+# LOAD MODEL
+# -------------------------
+model = load_model(MODEL_PATH)
 
 # -------------------------
 # PREPROCESS FUNCTION
 # -------------------------
 def preprocess(frame):
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Important
     frame = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
     frame = frame / 255.0
     return np.expand_dims(frame, axis=0)
@@ -34,14 +40,14 @@ def preprocess(frame):
 # -------------------------
 # PREDICTION FUNCTIONS
 # -------------------------
-def predict_image(img_path):
-    img = cv2.imread(img_path)
+def predict_image(path):
+    img = cv2.imread(path)
     if img is None:
         return 0.0
     return model.predict(preprocess(img), verbose=0)[0][0]
 
-def predict_video(video_path):
-    cap = cv2.VideoCapture(video_path)
+def predict_video(path):
+    cap = cv2.VideoCapture(path)
     preds = []
     frame_count = 0
     max_frames = 50
@@ -61,8 +67,8 @@ def predict_video(video_path):
     cap.release()
     return np.mean(preds) if preds else 0.0
 
-def predict_gif(gif_path):
-    frames = imageio.mimread(gif_path)
+def predict_gif(path):
+    frames = imageio.mimread(path)
     preds = []
 
     for frame in frames[:10]:
@@ -77,19 +83,20 @@ def predict_gif(gif_path):
 
     return np.mean(preds) if preds else 0.0
 
-# -------------------------
-# EVALUATE TEST DATA
-# -------------------------
-TEST_DIR = "test_inputs"
+# =====================================================
+# PART 1: MODEL EVALUATION (LABELED DATA)
+# =====================================================
 y_true = []
 y_pred = []
-scores = []   # 🔥 store raw scores
+
+print("\n📊 Evaluating model on labeled test data...\n")
 
 for label in ["bullying", "non_bullying"]:
     true_label = 0 if label == "bullying" else 1
     folder = os.path.join(TEST_DIR, label)
 
     if not os.path.exists(folder):
+        print(f"⚠ Folder missing: {folder}")
         continue
 
     for file in os.listdir(folder):
@@ -105,14 +112,12 @@ for label in ["bullying", "non_bullying"]:
         else:
             continue
 
-        scores.append(score)
-
         pred_label = 0 if score < THRESHOLD else 1
         y_true.append(true_label)
         y_pred.append(pred_label)
 
 # -------------------------
-# METRICS IN %
+# METRICS
 # -------------------------
 if y_true:
 
@@ -121,13 +126,13 @@ if y_true:
     rec = recall_score(y_true, y_pred) * 100
     f1 = f1_score(y_true, y_pred) * 100
 
-    print("\n📊 FINAL METRICS (IN %)")
+    print("✅ FINAL METRICS")
     print(f"Accuracy  : {acc:.2f}%")
     print(f"Precision : {prec:.2f}%")
     print(f"Recall    : {rec:.2f}%")
-    print(f"F1-Score  : {f1:.2f}%")
+    print(f"F1-Score  : {f1:.2f}%\n")
 
-    print("\n📄 Classification Report:\n")
+    print("📄 Classification Report:\n")
     print(classification_report(
         y_true,
         y_pred,
@@ -135,23 +140,57 @@ if y_true:
     ))
 
     # -------------------------
-    # THRESHOLD TESTING
+    # CONFUSION MATRIX GRAPH
     # -------------------------
-    print("\n🔎 Threshold Testing:\n")
+    cm = confusion_matrix(y_true, y_pred)
 
-    for t in [0.4, 0.5, 0.6, 0.7]:
-        temp_preds = [0 if s < t else 1 for s in scores]
-        temp_acc = accuracy_score(y_true, temp_preds) * 100
-        print(f"Threshold {t} → Accuracy: {temp_acc:.2f}%")
+    plt.figure(figsize=(5,5))
+    plt.imshow(cm, cmap="Blues")
+    plt.title("Confusion Matrix")
+    plt.colorbar()
 
-# -------------------------
-# NEW INPUT PREDICTIONS
-# -------------------------
-NEW_INPUT_DIR = "inputs"
+    classes = ["Bullying", "Non-Bullying"]
+    plt.xticks([0,1], classes)
+    plt.yticks([0,1], classes)
+
+    for i in range(2):
+        for j in range(2):
+            plt.text(j, i, cm[i, j],
+                     ha="center", va="center", color="black")
+
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.tight_layout()
+    plt.show()
+
+    # -------------------------
+    # METRICS BAR GRAPH
+    # -------------------------
+    plt.figure(figsize=(6,4))
+
+    metrics_values = [acc, prec, rec, f1]
+    metrics_labels = ["Accuracy", "Precision", "Recall", "F1-Score"]
+
+    plt.bar(metrics_labels, metrics_values)
+    plt.ylim(0, 100)
+    plt.title("Model Performance Metrics (%)")
+    plt.ylabel("Percentage")
+
+    for i, v in enumerate(metrics_values):
+        plt.text(i, v + 1, f"{v:.1f}%", ha="center")
+
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print("❌ No labeled data found.")
+
+# =====================================================
+# PART 2: PREDICTION ON NEW UNLABELED DATA
+# =====================================================
+print("\n🔹 Predictions on NEW unlabeled data\n")
 
 if os.path.exists(NEW_INPUT_DIR):
-    print("\n🔹 PREDICTIONS ON NEW INPUTS\n")
-
     for file in os.listdir(NEW_INPUT_DIR):
         path = os.path.join(NEW_INPUT_DIR, file)
         ext = os.path.splitext(file)[1].lower()
@@ -165,11 +204,7 @@ if os.path.exists(NEW_INPUT_DIR):
         else:
             continue
 
-        print(f"Score: {score:.4f}")
-
-        if score < THRESHOLD:
-            pred_label = "Bullying"
-        else:
-            pred_label = "Non-Bullying"
-
-        print(f"File: {file} → Predicted: {pred_label}\n")
+        label = "Bullying" if score < THRESHOLD else "Non-Bullying"
+        print(f"{file} → {label} (score = {score:.4f})")
+else:
+    print("❌ No unlabeled input folder found.")
