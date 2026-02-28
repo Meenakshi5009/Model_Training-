@@ -18,17 +18,12 @@ TRAIN_DIR = r"C:\Users\meena\OneDrive\Desktop\ModelTrain\train"
 VAL_DIR   = r"C:\Users\meena\OneDrive\Desktop\ModelTrain\val"
 
 # -------------------------
-# DATA GENERATORS
+# DATA GENERATORS (Safer for text images)
 # -------------------------
 train_datagen = ImageDataGenerator(
     rescale=1./255,
-    rotation_range=20,
-    zoom_range=0.2,
-    brightness_range=[0.7, 1.3],
-    shear_range=0.1,
-    width_shift_range=0.05,
-    height_shift_range=0.05,
-    horizontal_flip=True
+    zoom_range=0.1,
+    brightness_range=[0.9, 1.1]
 )
 
 val_datagen = ImageDataGenerator(rescale=1./255)
@@ -48,7 +43,7 @@ val_gen = val_datagen.flow_from_directory(
 )
 
 # -------------------------
-# SAFETY CHECK
+# DEBUG INFO
 # -------------------------
 print("Train samples:", train_gen.samples)
 print("Validation samples:", val_gen.samples)
@@ -66,11 +61,10 @@ base_model = MobileNetV2(
     weights="imagenet"
 )
 
-# Freeze all layers initially
 base_model.trainable = False
 
 # -------------------------
-# CUSTOM HEAD
+# CUSTOM CLASSIFIER HEAD
 # -------------------------
 x = base_model.output
 x = GlobalAveragePooling2D()(x)
@@ -90,14 +84,6 @@ model.compile(
 )
 
 # -------------------------
-# CLASS WEIGHTS
-# -------------------------
-class_weight = {
-    0: 2.0,  # bullying
-    1: 1.0   # non-bullying
-}
-
-# -------------------------
 # TRAIN INITIAL MODEL
 # -------------------------
 early_stop = EarlyStopping(patience=5, restore_best_weights=True)
@@ -106,30 +92,25 @@ history = model.fit(
     train_gen,
     validation_data=val_gen,
     epochs=EPOCHS,
-    class_weight=class_weight,
     callbacks=[early_stop]
 )
 
 # -------------------------
-# OPTIONAL: FINE-TUNE LAST LAYERS
+# FINE-TUNE LAST 20 LAYERS
 # -------------------------
-# Unfreeze last 20 layers of base_model
 for layer in base_model.layers[-20:]:
     layer.trainable = True
 
-# Compile again with smaller learning rate
 model.compile(
     optimizer=Adam(learning_rate=1e-5),
     loss="binary_crossentropy",
     metrics=["accuracy"]
 )
 
-# Continue training for a few more epochs
 history_finetune = model.fit(
     train_gen,
     validation_data=val_gen,
-    epochs=10,  # fine-tune 10 epochs
-    class_weight=class_weight,
+    epochs=10,
     callbacks=[early_stop]
 )
 
@@ -138,4 +119,5 @@ history_finetune = model.fit(
 # -------------------------
 os.makedirs("models", exist_ok=True)
 model.save("models/gif_video_bullying_model.h5")
+
 print("✅ Model trained and saved successfully")
