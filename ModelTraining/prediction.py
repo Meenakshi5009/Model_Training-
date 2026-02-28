@@ -24,33 +24,48 @@ def preprocess(frame):
     frame = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
     frame = frame / 255.0
     return np.expand_dims(frame, axis=0)
-
 # -------------------------
 # PREDICTION FUNCTIONS
 # -------------------------
+
 def predict_image(img_path):
     img = cv2.imread(img_path)
     return model.predict(preprocess(img), verbose=0)[0][0]
-
 def predict_video(video_path):
     cap = cv2.VideoCapture(video_path)
     preds = []
+    frame_count = 0
+    max_frames = 50   # Limit total frames (very important)
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        preds.append(model.predict(preprocess(frame), verbose=0)[0][0])
+
+        # Process every 10th frame only
+        if frame_count % 10 == 0:
+            preds.append(model.predict(preprocess(frame), verbose=0)[0][0])
+
+        frame_count += 1
+
+        # Stop after max_frames
+        if frame_count > max_frames:
+            break
+
     cap.release()
-    return np.mean(preds)
+    return np.mean(preds) if preds else 0.0
 
 def predict_gif(gif_path):
     frames = imageio.mimread(gif_path)
     preds = []
-    for frame in frames[:10]:
+
+    for frame in frames[:10]:  # Only first 10 frames
         if frame.shape[-1] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)
+
         preds.append(model.predict(preprocess(frame), verbose=0)[0][0])
-    return np.mean(preds)
+
+    return np.mean(preds) if preds else 0.0
 
 # -------------------------
 # PART 1: EVALUATE ON LABELED TEST DATA
